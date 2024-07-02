@@ -363,9 +363,10 @@ func (q *Query) ExcludeColumn(columns ...string) *Query {
 // AppendColumn appends column to the list of default columns if they weren't set,
 // while Column method overrides defaults
 func (q *Query) AppendColumn(columns ...string) *Query {
+	t := q.tableModel.Table()
 	if q.columns == nil {
-		for _, f := range q.tableModel.Table().Fields {
-			q.columns = append(q.columns, fieldAppender{f.SQLName})
+		for _, f := range t.Fields {
+			q.columns = append(q.columns, fieldAppender{fmt.Sprintf("%s.%s", t.Alias, f.SQLName)})
 		}
 	}
 	return q.Column(columns...)
@@ -374,9 +375,10 @@ func (q *Query) AppendColumn(columns ...string) *Query {
 // AppendColumnExpr appends column expression to the list of default columns if they weren't set,
 // while ColumnExpr method overrides defaults
 func (q *Query) AppendColumnExpr(expr string, params ...interface{}) *Query {
+	t := q.tableModel.Table()
 	if q.columns == nil {
-		for _, f := range q.tableModel.Table().Fields {
-			q.columns = append(q.columns, fieldAppender{f.SQLName})
+		for _, f := range t.Fields {
+			q.columns = append(q.columns, fieldAppender{fmt.Sprintf("%s.%s", t.Alias, f.SQLName)})
 		}
 	}
 	return q.ColumnExpr(expr, params...)
