@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -345,6 +346,12 @@ func (q *Query) ColumnExpr(expr string, params ...interface{}) *Query {
 }
 
 // ExcludeColumn excludes a column from the list of to be selected columns.
+// Column name can be:
+//   - column_name,
+//   - table_alias.column_name,
+//   - table_alias.*.
+//
+// Using quotes like "column_name" is not supported
 func (q *Query) ExcludeColumn(columns ...string) *Query {
 	if q.columns == nil {
 		for _, f := range q.tableModel.Table().Fields {
@@ -386,12 +393,54 @@ func (q *Query) AppendColumnExpr(expr string, params ...interface{}) *Query {
 
 func (q *Query) excludeColumn(column string) bool {
 	for i := 0; i < len(q.columns); i++ {
-		app, ok := q.columns[i].(fieldAppender)
-		if ok && app.field == column {
+		var queryColumn string
+		switch app := q.columns[i].(type) {
+		case fieldAppender:
+			queryColumn = app.field
+		case *SafeQueryAppender:
+			queryColumn = string(app.Value())
+		default:
+			continue
+		}
+
+		if q._matchColumn(queryColumn, column) {
 			q.columns = append(q.columns[:i], q.columns[i+1:]...)
 			return true
 		}
 	}
+	return false
+}
+
+var columnMatcher = regexp.MustCompile(`^("?(?P<alias>[a-zA-Z0-9_]+)"?\.)?"?(?P<column>[a-zA-Z0-9_*]+)"?\s?`)
+
+func (q *Query) _matchColumn(column string, target string) bool {
+	columnMatches := columnMatcher.FindStringSubmatch(column)
+	if columnMatches == nil {
+		return false
+	}
+
+	// Extract named groups: "alias" and "column".
+	result := make(map[string]string)
+	for i, name := range columnMatcher.SubexpNames() {
+		if i != 0 && name != "" { // Skip the entire match and unnamed groups.
+			result[name] = columnMatches[i]
+		}
+	}
+
+	// As we are matching table.column == exclude.column, we need to have an alias
+	if result["alias"] == "" {
+		result["alias"] = string(q.tableModel.Table().Alias)
+	}
+
+	// also set alias for target
+	if !strings.Contains(target, ".") {
+		target = fmt.Sprintf("%s.%s", string(q.tableModel.Table().Alias), target)
+	}
+
+	if fmt.Sprintf("%s.%s", result["alias"], result["column"]) == target {
+		return true
+	}
+
 	return false
 }
 
